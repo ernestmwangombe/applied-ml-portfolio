@@ -196,7 +196,7 @@ The main risks are that the signal could be weak (as in ML-04, where the honest 
 
 ## Exploration, not submitted — freestyle windows
 
-A scratch notebook for the Growth / Recovery / Momentum direction I chose (not committed): features from a prior window, outcome in a future window, declined = future daily impressions below 80% of prior, compared with the page's client. February to March 2026: 80,322 eligible pages across 37 clients, 26.7% declined. Of the 21,482 declined pages, 17,837 fell while their client's typical page held steady, 3,609 fell with a client-wide dip, and 36 had an unknown client. A check on the same transition a year earlier found almost no sign of a repeated dip, with last-year information for only 20,511 pages.
+A scratch notebook for the Growth / Recovery / Momentum direction I chose (work/notebooks/freestyle_windows.ipynb, committed 23 Nov 2026, not submitted on a card: features from a prior window, outcome in a future window, declined = future daily impressions below 80% of prior, compared with the page's client. February to March 2026: 80,322 eligible pages across 37 clients, 26.7% declined. Of the 21,482 declined pages, 17,837 fell while their client's typical page held steady, 3,609 fell with a client-wide dip, and 36 had an unknown client. A check on the same transition a year earlier found almost no sign of a repeated dip, with last-year information for only 20,511 pages.
 
 **What this suggests**
 
