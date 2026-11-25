@@ -6,6 +6,7 @@ A short record of each assignment: what I built, what the numbers were, and what
 
 - **Lane (decided 24 Nov 2026):** freestyle direction Growth / Recovery / Momentum Prediction, in a staged form with ideas from a seasonality-aware refresh queue built in. I started with Lane 2 (Refresh / Content Opportunity Scoring) as a provisional choice, and I also looked at AI Referral Opportunity. I chose this direction because it turns my own observations (the wait before judging an article, and seasonality) into design features, it gives a forecast from prior and future windows instead of an association check, and it can grow as months of data are added.
 - **Frozen baseline (ML-07, Lane 2 on the starter data):** the STALE_VISIBLE refresh rule. Precision@10 / @20 / @50 = 0.600 / 0.450 / 0.440 against a base rate of 0.542. It stays as my submitted record. I still need to build a new baseline for the freestyle lane, and to check how the track treats the lane switch for Week 5, which asks for the same pages as the Week 4 baseline.
+- **Freestyle baseline v1 (frozen 24 Nov 2026):** flag a page if its impressions in the last 14 days of the prior window fell by 20% or more compared with the 14 days before. Settings: at least 100 impressions in the earlier 14 days; rank by size of fall, then by prior daily impressions; held-out clients chosen by `GroupShuffleSplit` (20% of clients, seed 42); prior window February 2026, future window March 2026; label = future daily impressions below 80% of the prior daily average. These settings are not edited after the run. Any change becomes a new version in the build log.
 - **Validation:** hold out whole clients, not random pages. The ML-01 held-out comparison used a random page split, so a client-level test is still to do.
 - **Data conventions:** rate columns are percentages (ctr 0.76 means 0.76%); `avg_position = 0` means no data; `trend_direction` and `trend_pct` are never features (they make the label).
 - **Working note on timing:** articles usually get a few months after their initial post or refresh before their trend is judged, because of Google search algorithm updates. I plan to keep this waiting period configurable by action.
@@ -169,32 +170,105 @@ The rule ranks 6,575 of 30,000 pages (21.9%) and writes the ranked queue to work
 
 - **Receipts:** base rate 54.2%. Staleness buckets declining rate: 51.1% (0–30 days, n=20,480), 58.9% (31–90, n=175), 61.1% (91–180, n=9,171), 47.1% (181+, n=174). Volume buckets: 38.9% (1–100, n=8,006), 60.4% (101–500, n=5,279), 62.1% (501–3,000, n=8,432), 57.0% (3,000+, n=8,283). Queue: 6,575 of 30,000 pages. Precision@10 / @20 / @50 = 0.600 / 0.450 / 0.440 vs base rate 0.542. The full top-20 review is in the notebook. Metrics file: `work/outputs/baseline_metrics.json`.
 
-## Freestyle plan (draft, to confirm and put in my own words)
+## Freestyle plan
 
-**Direction:** Growth / Recovery / Momentum Prediction, staged. Decline is the first target; growth and recovery are later extensions. AI-referred sessions could be a later extension if the data allows.
+**My direction:**
+I chose the Growth / Recovery / Momentum Prediction direction and will start with decline prediction, because understanding which pages are at risk of losing visibility is a practical way to help editors focus their efforts. Growth and recovery can follow once the decline patterns are clear.
 
-**Question:** can features from a page's prior window show which pages are likely to lose visibility in the next window, so an editor knows where to look first?
+**My question:**
+I want to find out which pages are likely to lose visibility in the next window, so editors know which ones to prioritize for review.
 
-**Design**
-- **Data and windows:** the warehouse daily table, with prior-window features and a future-window outcome built per client, because history depth differs. June 2026 stays sealed as the test month. Months come from a setting, so new months can be added without rewriting code.
-- **Label:** decline = a page's future daily impressions below 80% of its prior daily average, for pages with enough prior impressions and search data confirmed with `IS TRUE`. Features come only from the prior window, and nothing built from the outcome window is allowed.
-- **Peer comparison (from the seasonality idea):** compare a page's change with its client's typical page and, where history exists, with the same period a year earlier. A decline that matches a client-wide dip is treated as possibly seasonal (monitor, or plan a refresh before the season) and not as an urgent review.
-- **Maturity window:** an article gets time after a post or refresh before its trend is judged, because of Google algorithm updates. This is a setting by action type (the Week 4 lecture gave 2–4 weeks for a content fix, 4–6 for a snippet fix, 4–8 for a page-one push, and 6–12 for a refresh).
-- **Baseline first:** a transparent rule (impressions fell over the last 14 days compared with the 14 before), with a reason code and an action, scored by Precision@K against the base rate. A model has to beat it, validated on whole held-out clients.
-- **Output:** a ranked future-risk list with reason codes. An editor reviews the top pages.
-- **Careful words:** observed and directional decision support. No claim that an action causes recovery, and seasonality is treated as a risk, not a proven cause.
+**Data and windows:**
+I will use the warehouse daily table, building features from an earlier time frame and measuring outcomes in a later window. The windows are set by month, and I compare each page with its own client. Because history depth differs by client, I will check each client's data start before using it, and I may move to per-client windows later. I'll keep June 2026 sealed as a test period to assess generalization.
 
-**First results (scratch notebook, not submitted):** see the exploration section below.
+**The label:**
+A page is labeled as declining if its future daily impressions fall below 80% of its prior daily average. I will only include pages that have enough impressions in the prior window (I started with 100) and confirmed search data, making sure not to use any feature from the outcome window.
 
-**Known challenges:** weak signal (my ML-04 quick score was near the base rate), only about 17 months of history, seasonality and algorithm updates, and the size of the warehouse (iterate on one month and cache).
+**Seasonality and timing:**
+To avoid mistaking seasonal shifts or algorithm changes for real decline, I will compare each page's trend with its client's typical patterns and, where history exists, with the same period last year. I'll also require a minimum "maturity window" before judging a page, with the length depending on the action type.
 
-**Next steps:** run more month pairs and see whether the client-wide-dip share is stable; add a spike check; build the prior-window baseline and score it on held-out clients; confirm with the track how the lane change affects the Week 5 data.
+**Baseline and test:**
+My baseline is a simple rule: I will flag a page as likely to decline if its impressions in the last 14 days fell compared with the 14 days before, by an amount I will choose and write down. I'll score this using Precision@K against the base rate and always test on whole clients that the model has not seen.
+
+**Limits and next steps:**
+The main risks are that the signal could be weak (as in ML-04, where the honest score was close to the base rate) and that seasonality or short windows might add noise. First, I'll check more month pairs and run a spike test, then benchmark the baseline.
+
+## Freestyle build log — versions and adjustments
+
+Every version records its settings, its results, and what I changed and why. A version is never edited after it has been run. A change becomes a new version, with one change at a time and the reason written before I run it. Version 1 is always reported next to later versions. The sealed month (June 2026) is never used while developing.
+
+### Version 1 — prior-window baseline, February to March 2026 (frozen)
+
+Run in my scratch notebook `work/notebooks/freestyle_windows.ipynb` on 24 Nov 2026. The baseline cells were saved to GitHub on 25 Nov 2026 (commit 1666e5d), together with the grouped-fold check.
+
+**The rule:** flag a page as likely to decline if its impressions in the last 14 days of the prior window fell by 20% or more compared with the 14 days before.
+
+| Setting | Value | Why |
+|---|---|---|
+| Drop threshold | 20% | Mirrors the 80% line in the label; chosen before looking at results |
+| Minimum earlier impressions | 100 in the earlier 14 days | Small numbers create fake falls |
+| Pages with no search data in the last 14 days | left out | Unknown is not the same as zero |
+| Ranking | size of fall, then prior daily impressions | A written tie policy |
+| Test clients | 20% of clients held out whole, seed 42 | A client's pages never in both groups |
+| Windows | prior = Feb 2026, future = Mar 2026 | June 2026 stays sealed |
+
+**Results**
+
+| | All judgeable pages | Held-out clients |
+|---|---|---|
+| Pages / clients | 57,841 / 27 | 958 / 6 |
+| Base rate (share that declined) | 0.287 | 0.356 |
+| Flagged | 12,838 | 384 |
+| Precision of flagged pages | 0.546 | 0.536 |
+| Precision@50 / @100 / @500 | 0.94 / 0.92 / 0.888 | 1.00 / 0.92 / 0.474 |
+
+Of the 80,322 pages in the window, 70,927 had both 14-day numbers.
+
+**What I observed** _(draft wording, to confirm)_
+- The rule works at the top of the list: in the held-out clients 50 of the top 50 declined, against a base rate of 0.356.
+- It weakens further down: Precision@500 is 0.474 in the held-out clients, still above the 0.356 base rate but much lower than across all pages (0.888).
+- The held-out view is thin (6 clients, 958 pages, one split, one month pair), so these numbers are directional.
+- Part of the result may be persistence: a page whose recent level is below its earlier level is already under the prior average, so if the recent level continues, the label is met. This is not leakage, since the rule uses only prior-window data, but it means the result is not a deep prediction.
+- The ten highest-ranked pages that did not decline were small pages (112 to 528 impressions in the earlier 14 days) with large relative drops, from about two clients, and several rebounded. Ranking by relative fall alone puts noisy small pages first.
+
+#### Version 1 — grouped-fold check (rule unchanged)
+
+Run on 25 Nov 2026 with `GroupKFold` (5 folds, every client held out once). Each fold is scored against its own base rate.
+
+| Fold | Pages | Clients | Base rate | Flagged precision | Lift | Precision@50 | Precision@100 | Precision@500 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 14,787 | 1 | 0.261 | 0.385 | 1.48 | 0.78 | 0.79 | 0.576 |
+| 2 | 12,756 | 1 | 0.300 | 0.465 | 1.55 | 1.00 | 0.97 | 0.784 |
+| 3 | 10,099 | 7 | 0.238 | 0.562 | 2.36 | 0.96 | 0.94 | 0.756 |
+| 4 | 10,100 | 7 | 0.432 | 0.853 | 1.97 | 0.96 | 0.98 | 0.976 |
+| 5 | 10,099 | 11 | 0.212 | 0.371 | 1.75 | 0.68 | 0.63 | 0.462 |
+| Mean (unweighted) | 11,568 | 5.4 | 0.289 | 0.527 | 1.82 | 0.876 | 0.862 | 0.711 |
+
+**What I observed** _(draft wording, to confirm)_
+- In every fold the flagged pages declined more often than the base rate: the lift ranged from 1.48 to 2.36.
+- The top-of-list precision varied a lot by fold (Precision@50 from 0.68 to 1.00; Precision@500 from 0.462 to 0.976), so the single split of 6 clients in the first run was a noisy guide.
+- Two of the five folds are one client each, and the base rate ranges from 0.212 to 0.432, so the client mix strongly affects the numbers. This is a check across clients, but not across many independent clients.
+- This is still one month pair (February to March 2026).
+
+### Adjustment log
+
+Each row is a separate version or check. Results are filled in after the run.
+
+| Version | What changes (one thing at a time) | Why | Status | Result |
+|---|---|---|---|---|
+| v1 | Baseline as above | The bar a model has to beat | Run, frozen | See above |
+| v1 folds | Evaluate v1 on every client fold (rule unchanged) | A single split of 6 clients is thin; report every fold | Run | 5 client folds: flagged precision 0.371 to 0.853 (mean 0.527) against base rates 0.212 to 0.432 (mean 0.289), a lift of 1.48 to 2.36 (mean 1.82). Precision@50 0.68 to 1.00 (mean 0.876); Precision@500 0.462 to 0.976 (mean 0.711). Two of the five folds are a single client. |
+| v2 | Rank by stake (fall × prior daily impressions) instead of relative fall | False alarms were small noisy pages; the Week 4 lecture says rank by what is at stake | Planned | — |
+| v3 | Raise the minimum earlier impressions from 100 to 300 | Reduce noise from small numbers | Planned | — |
+| v4 | Run v1 on March to April | Check whether the result holds on another month pair | Planned | — |
+| v5 | Spike check on the prior window | A fading spike can look like a decline | Planned | — |
+| v6 | Stricter label: future compared with the recent level | Test whether the result is only persistence | Planned | — |
 
 ---
 
 ## Exploration, not submitted — freestyle windows
 
-A scratch notebook for the Growth / Recovery / Momentum direction I chose (not committed): features from a prior window, outcome in a future window, declined = future daily impressions below 80% of prior, compared with the page's client. February to March 2026: 80,322 eligible pages across 37 clients, 26.7% declined. Of the 21,482 declined pages, 17,837 fell while their client's typical page held steady, 3,609 fell with a client-wide dip, and 36 had an unknown client. A check on the same transition a year earlier found almost no sign of a repeated dip, with last-year information for only 20,511 pages.
+A scratch notebook for the Growth / Recovery / Momentum direction I chose (`work/notebooks/freestyle_windows.ipynb`, first committed on 23 Nov 2026, not submitted on a card): features from a prior window, outcome in a future window, declined = future daily impressions below 80% of prior, compared with the page's client. February to March 2026: 80,322 eligible pages across 37 clients, 26.7% declined. Of the 21,482 declined pages, 17,837 fell while their client's typical page held steady, 3,609 fell with a client-wide dip, and 36 had an unknown client. A check on the same transition a year earlier found almost no sign of a repeated dip, with last-year information for only 20,511 pages.
 
 **What this suggests**
 
